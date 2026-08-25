@@ -576,7 +576,7 @@ class ITT(UNIT3D):
                 if isinstance(title, str):
                     country_match = title
                 break  # Country match takes priority
-            elif aka.get("language") == "Italy" and not language_match and not aka.get("attributes"):
+            elif aka.get("language") == "Italian" and not language_match and not aka.get("attributes"):
                 title = aka.get("title")
                 if isinstance(title, str):
                     language_match = title
