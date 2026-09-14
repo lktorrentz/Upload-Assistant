@@ -429,7 +429,10 @@ class ITT(UNIT3D):
         5. Encoding tools (source-aware) -> WEBRIP/ENCODE (Handbrake/Staxrip/etc in general track)
         6. No encoding + WEB -> WEB-DL
         7. Service override -> WEB-DL (handles misdetected sources)
-        8. No encoding + disc -> REMUX
+        8. No encoding + disc -> REMUX only if bitrate is consistent with an
+           untouched disc stream; otherwise ENCODE (missing encoding metadata
+           isn't proof of REMUX - it can just mean the tool/signature wasn't
+           recognized, e.g. metadata stripped or an unlisted encoder)
         """
 
         def has_encoding_tools(general_track: dict[str, Any], tools: list[str]) -> bool:
@@ -439,6 +442,41 @@ class ITT(UNIT3D):
             writing_frontend = str(extra.get("Writing_frontend", "")).lower()
             tool_string = f"{encoded_app} {writing_frontend}"
             return any(tool in tool_string for tool in tools)
+
+        def get_bitrate_mbps(track: dict[str, Any], key: str = "BitRate") -> Optional[float]:
+            """Extract a bitrate field in Mb/s, handling missing/dict (old MediaInfo) values."""
+            raw = track.get(key)
+            if raw is None or isinstance(raw, dict):
+                return None
+            try:
+                return int(raw) / 1_000_000
+            except (ValueError, TypeError):
+                return None
+
+        def has_lossless_audio(all_tracks: list[dict[str, Any]]) -> bool:
+            """Disc remuxes almost always keep at least one lossless audio track."""
+            lossless_formats = {"TrueHD", "MLP FBA", "DTS-HD MA", "PCM"}
+            for t in all_tracks:
+                if t.get("@type") != "Audio":
+                    continue
+                if str(t.get("Format", "")) in lossless_formats:
+                    return True
+            return False
+
+        def remux_bitrate_thresholds(resolution: str) -> tuple[float, float]:
+            """(floor, confirm) Mb/s thresholds by resolution.
+
+            Below floor: too low for any real disc remux -> ENCODE.
+            Between floor and confirm: ambiguous -> use audio as tiebreaker.
+            At/above confirm: high-confidence REMUX.
+            """
+            if "2160" in resolution:
+                return 40.0, 60.0
+            if "1080" in resolution:
+                return 25.0, 35.0
+            if "720" in resolution:
+                return 15.0, 22.0
+            return 20.0, 30.0
 
         try:
             mi = cast(dict[str, Any], meta.get("mediainfo", {}))
@@ -538,8 +576,20 @@ class ITT(UNIT3D):
             if service and service not in ("", "NONE"):
                 return "WEBDL"
 
-            # ===== Priority 8: No encoding + disc = REMUX =====
+            # ===== Priority 8: No encoding + disc = REMUX (bitrate-checked) =====
             if any(s in ("BLURAY", "BLU-RAY", "HDDVD") for s in source):
+                resolution = str(meta.get("resolution", ""))
+                video_bitrate = get_bitrate_mbps(video_track)
+                if video_bitrate is None:
+                    video_bitrate = get_bitrate_mbps(general_track, "OverallBitRate")
+
+                if video_bitrate is not None:
+                    floor, confirm = remux_bitrate_thresholds(resolution)
+                    if video_bitrate < floor:
+                        return "ENCODE"
+                    if video_bitrate < confirm:
+                        return "REMUX" if has_lossless_audio(tracks) else "ENCODE"
+
                 return "REMUX"
 
             # DVD REMUX detection
