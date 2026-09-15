@@ -672,32 +672,9 @@ class ITT(UNIT3D):
             return self._get_language_name(iso_code).title()
 
     async def _get_best_italian_audio_format(self, meta: dict[str, Any]) -> str:
-        """Filter Italian tracks, select best, format via get_audio_v2"""
+        """Format every non-commentary audio track's codec (all languages), space-separated
+        in the order MediaInfo/BDInfo reports them"""
         # fmt: off
-        ITALIAN_LANGS = {"it", "italian", "italiano"}
-
-        def extract_quality(track: dict[str, Any], is_bdinfo: bool) -> tuple[bool, int, bool, int]:
-            if is_bdinfo:
-                bitrate_match = re.search(r'(\d+)', track.get("bitrate", "0"))
-                return (
-                    any(x in track.get("codec", "").lower() for x in ["truehd", "dts-hd ma", "flac", "pcm"]),
-                    int(float(track.get("channels", "2.0").split(".")[0])),
-                    "atmos" in track.get("atmos_why_you_be_like_this", "").lower(),
-                    int(bitrate_match.group(1)) if bitrate_match else 0
-                )
-            else:
-                try:
-                    bitrate_int = int(track.get("BitRate", 0)) if track.get("BitRate", 0) else 0
-                except (ValueError, TypeError) as e:
-                    cli_ui.warning(f"Invalid BitRate value in audio track: {track.get('BitRate')}\n"
-                                   f"Using 0 as default. Error: {e}.")
-                    bitrate_int = 0
-                return (
-                    track.get("Compression_Mode") == "Lossless",
-                    int(track.get("Channels", 2)),
-                    "JOC" in track.get("Format_AdditionalFeatures", "") or "Atmos" in track.get("Format_Commercial", ""),
-                    bitrate_int
-                )
 
         def clean(audio_str: str) -> str:
             return re.sub(r"\s*-[A-Z]{3}(-[A-Z]{3})*$", "", audio_str.replace("Dual-Audio", "").replace("Dubbed", "")).strip()
@@ -705,27 +682,37 @@ class ITT(UNIT3D):
         bdinfo = cast(dict[str, Any], meta.get("bdinfo", {}))
 
         if bdinfo and bdinfo.get("audio"):
-            italian = [t for t in bdinfo["audio"] if t.get("language", "").lower() in ITALIAN_LANGS]
-            if not italian:
+            entries = [
+                t for t in bdinfo["audio"]
+                if "commentary" not in str(t.get("title", "")).lower()
+            ]
+            if not entries:
                 audio_value = meta.get("audio", "")
                 return clean(audio_value if isinstance(audio_value, str) else "")
-            best = max(italian, key=lambda t: extract_quality(t, True))
-            audio_str, _, _ = await self.audio_manager.get_audio_v2({}, meta, {"audio": [best]})
+            parts = []
+            for entry in entries:
+                audio_str, _, _ = await self.audio_manager.get_audio_v2({}, meta, {"audio": [entry]})
+                cleaned = clean(str(audio_str))
+                if cleaned:
+                    parts.append(cleaned)
+            return " ".join(parts)
         else:
             tracks = meta.get("mediainfo", {}).get("media", {}).get("track", [])
-            italian = [
+            audio_tracks = [
                 t for t in tracks[1:]
                 if t.get("@type") == "Audio"
-                and self._get_language_code(t) in ITALIAN_LANGS
                 and "commentary" not in str(t.get("Title", "")).lower()
             ]
-            if not italian:
+            if not audio_tracks:
                 audio_value = meta.get("audio", "")
                 return clean(audio_value if isinstance(audio_value, str) else "")
-            best = max(italian, key=lambda t: extract_quality(t, False))
-            audio_str, _, _ = await self.audio_manager.get_audio_v2({"media": {"track": [tracks[0], best]}}, meta, None)
-
-        return clean(str(audio_str))
+            parts = []
+            for track in audio_tracks:
+                audio_str, _, _ = await self.audio_manager.get_audio_v2({"media": {"track": [tracks[0], track]}}, meta, None)
+                cleaned = clean(str(audio_str))
+                if cleaned:
+                    parts.append(cleaned)
+            return " ".join(parts)
 
     async def get_description(self, meta: dict[str, Any], is_test: bool = False) -> dict[str, str]:
         """Generate Italian BBCode description for ItaTorrents"""
