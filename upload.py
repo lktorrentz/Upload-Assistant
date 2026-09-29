@@ -110,7 +110,7 @@ _SKIP_DIRS = {"__pycache__", ".mypy_cache", ".ruff_cache"}
 
 # Built-in metadata files that should track the image version even when
 # /Upload-Assistant/data is a persistent volume from an older container.
-_ALWAYS_SYNC_ROOT_FILES = {"version.py"}
+_ALWAYS_SYNC_ROOT_FILES = {"version.py", "example-config.py"}
 
 if os.path.isdir(_defaults_data_dir):
     os.makedirs(_data_dir, exist_ok=True)
@@ -119,7 +119,8 @@ if os.path.isdir(_defaults_data_dir):
     _restore_errors: list[str] = []
     # Walk the defaults tree and copy anything missing in the live data dir.
     # Never overwrite user files (config.py, cookies/, tags.json, etc.).
-    # Root version.py is image metadata, not user config, so keep it current.
+    # Root version.py and example-config.py are image metadata, not user config,
+    # so keep them current (the web UI builds its config fields from example-config.py).
     for dirpath, dirnames, filenames in os.walk(_defaults_data_dir):
         # Prune unwanted directories in-place so os.walk skips them entirely
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
