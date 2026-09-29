@@ -637,6 +637,8 @@ config = {
             "link_dir_name": "",
             "api_key": "",
             "anon": False,
+            # Use Italian title instead of English title, if available
+            "use_italian_title": True,
         },
         "LCD": {
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name

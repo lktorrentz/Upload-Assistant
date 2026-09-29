@@ -95,7 +95,7 @@ class ITT(UNIT3D):
         title = meta.get("title", "")
         italian_title = self._get_italian_title(meta.get("imdb_info", {}))
         use_italian_title = self.config["TRACKERS"][self.tracker].get(
-            "use_italian_title", False
+            "use_italian_title", True
         )
         if italian_title and use_italian_title:
             title = italian_title
